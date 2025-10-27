@@ -150,6 +150,7 @@ static int32_t fs_get_object(tud_mtp_cb_data_t* cb_data);
 static int32_t fs_delete_object(tud_mtp_cb_data_t* cb_data);
 static int32_t fs_send_object_info(tud_mtp_cb_data_t* cb_data);
 static int32_t fs_send_object(tud_mtp_cb_data_t* cb_data);
+static int32_t fs_format_store(tud_mtp_cb_data_t* cb_data);
 
 typedef int32_t (*fs_op_handler_t)(tud_mtp_cb_data_t* cb_data);
 typedef struct {
@@ -171,6 +172,7 @@ fs_op_handler_dict_t fs_op_handler_dict[] = {
   { MTP_OP_DELETE_OBJECT,         fs_delete_object         },
   { MTP_OP_SEND_OBJECT_INFO,      fs_send_object_info      },
   { MTP_OP_SEND_OBJECT,           fs_send_object           },
+  { MTP_OP_FORMAT_STORE,          fs_format_store          },
 };
 
 static bool is_session_opened = false;
@@ -928,4 +930,35 @@ static int32_t fs_delete_object(tud_mtp_cb_data_t* cb_data) {
   }
   
   return MTP_RESP_OK;
+}
+
+int32_t fs_format_store(tud_mtp_cb_data_t* cb_data) {
+  const mtp_container_command_t* command = cb_data->command_container;
+  const uint32_t storage_id = command->params[0];
+
+  if (!is_session_opened) {
+    MTP_ESP_LOG("MtpImpl", "%s: session not open", __func__);
+    return MTP_RESP_SESSION_NOT_OPEN;
+  }
+  if (storage_id != 0xFFFFFFFF && storage_id != SUPPORTED_STORAGE_ID) {
+    MTP_ESP_LOG("MtpImpl", "%s: invalid storage ID %08X", __func__, storage_id);
+    return MTP_RESP_INVALID_STORAGE_ID;
+  }
+  if (current_handle != FS_INVALID_HANDLE || current_file != nullptr) {
+    MTP_ESP_LOG("MtpImpl", "%s: storage %08X busy", __func__, storage_id);
+    return MTP_RESP_DEVICE_BUSY;
+  }
+  auto rc = esp_littlefs_format("littlefs");
+  if (rc == ESP_OK) {
+    MTP_ESP_LOG("MtpImpl", "%s: format succeeded", __func__);
+    
+    handle_self_inc = 0;
+    fs_handletable_regenerate(&handle_table);
+    
+    return MTP_RESP_OK;
+  } else {
+    MTP_ESP_LOG("MtpImpl", "%s: format failed (rc = %d)", __func__, rc);
+    
+    return MTP_RESP_OPERATION_NOT_SUPPORTED;
+  }
 }
