@@ -95,7 +95,7 @@
 
 //------------- CLASS -------------//
 #define CFG_TUD_MTP               1
-#define CFG_TUD_MTP_EP_BUFSIZE    512
+#define CFG_TUD_MTP_EP_BUFSIZE    4096
 #define CFG_TUD_MTP_EP_CONTROL_BUFSIZE  16 // should be enough to hold data in MTP control request
 
 //------------- MTP device info -------------//
