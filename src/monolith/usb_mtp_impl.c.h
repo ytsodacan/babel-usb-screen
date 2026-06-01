@@ -738,7 +738,7 @@ void fs_output_multiply (uint32_t value) {
 }
 
 void fs_output_bytes_dec () {
-  for (int i = 0; i < output_file_len; i ++) {
+  for (int i = 0; i < output_file_len - 1; i ++) {
     int j = i;
     while (1) {
       if (output_file[j] == 0) {
@@ -749,6 +749,11 @@ void fs_output_bytes_dec () {
       }
       j ++;
     }
+  }
+  if (output_file[output_file_len - 1] == 0) {
+    output_file_len --;
+  } else {
+    output_file[output_file_len - 1] --;
   }
 }
 
