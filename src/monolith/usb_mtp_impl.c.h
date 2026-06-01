@@ -605,7 +605,10 @@ const char alphabet[BABEL_ALPHABET_LENGTH] = {
 
 uint8_t output_file[4096] = {0};
 size_t output_file_len = 0;
+
 uint32_t handle_count = 0;
+
+int cycle = 0;
 
 static int32_t fs_open_close_session(tud_mtp_cb_data_t* cb_data) {
   const mtp_container_command_t* command = cb_data->command_container;
@@ -616,12 +619,13 @@ static int32_t fs_open_close_session(tud_mtp_cb_data_t* cb_data) {
     is_session_opened = true;
 
     if (!handle_count) {
-      // Calculate total amount of objects (files/folders) in directory
+      // Calculate total amount of objects in each directory
+      handle_count = 1;
       for (int i = 0; i < BABEL_MAX_NAME_LENGTH; i++) {
-        uint32_t term = 1;
-        for (int j = 0; j <= i; j++) term *= BABEL_ALPHABET_LENGTH;
-        handle_count += term;
+        handle_count *= BABEL_ALPHABET_LENGTH;
       }
+      // Add one handle for the sole file in the directory
+      handle_count++;
     }
 
     output_file_len = 0;
@@ -703,34 +707,122 @@ static int32_t fs_get_device_properties(tud_mtp_cb_data_t* cb_data) {
   return 0;
 }
 
+void fs_output_add (uint32_t value) {
+  uint32_t index = 0;
+  uint32_t carry = 0;
+  while (value || carry) {
+    int digit = (value & 0xFF) + output_file[index] + carry;
+    output_file[index] = digit & 0xFF;
+    carry = digit >> 8;
+    value >>= 8;
+    if (++index > output_file_len) {
+      output_file[index] = 0;
+      output_file_len = index;
+    }
+  }
+}
+
+void fs_output_multiply (uint32_t value) {
+  uint32_t index = 0;
+  uint32_t carry = 0;
+  while (index < output_file_len || carry) {
+    uint32_t digit = output_file[index] * value + carry;
+    output_file[index] = digit & 0xFF;
+    carry = digit >> 8;
+    if (++index > output_file_len) {
+      output_file[index] = 0;
+      output_file_len = index;
+    }
+  }
+}
+
+void fs_output_bytes_dec () {
+  for (int i = 0; i < output_file_len; i ++) {
+    int j = i;
+    while (1) {
+      if (output_file[j] == 0) {
+        output_file[j] = 255;
+      } else {
+        output_file[j] --;
+        break;
+      }
+      j ++;
+    }
+  }
+}
+
+void fs_output_bytes_inc () {
+  for (int i = 0; i < output_file_len; i ++) {
+    int j = i;
+    while (1) {
+      if (output_file[j] == 255) {
+        output_file[j] = 0;
+      } else {
+        output_file[j] ++;
+        break;
+      }
+      if (++j > output_file_len) {
+        output_file[j] = 0;
+        output_file_len = j;
+      }
+    }
+  }
+}
+
 void fs_append_output (uint32_t handle) {
-  uint32_t index = 0;
-  uint32_t carry = 0;
-  while (handle || carry) {
-    int value = (handle & 0xFF) + output_file[index] + carry;
-    output_file[index] = value & 0xFF;
-    carry = value > 0xFF;
-    handle >>= 8;
-    if (++index > output_file_len) {
-      output_file[index] = 0;
-      output_file_len = index;
-    }
-  }
+
+  // Increment every byte of the output file buffer
+  /**
+   * This converts the arbitrary byte buffer to a valid base-256 number
+   * without any leading zeroes, so that it can be operated on with basic
+   * arithmetic. Then, once we're done, we decrement every byte to convert
+   * it back to a byte buffer that supports leading null bytes.
+   */
+  fs_output_bytes_inc();
+
+  // Shift buffer up by amount of possible combinations (base)
+  fs_output_multiply(handle_count - 1);
+
+  // Add current handle to least significant end of buffer
+  fs_output_add(handle);
+
+  // Decrement every byte of the output file buffer, undoing the first operation
+  fs_output_bytes_dec();
+
 }
-void fs_reverse_output (uint32_t handle) {
-  uint32_t index = 0;
-  uint32_t carry = 0;
-  while (handle || carry) {
-    int value = output_file[index] - (handle & 0xFF) - carry;
-    output_file[index] = value < 0 ? 256 + value : value;
-    carry = value < 0;
-    handle >>= 8;
-    if (++index > output_file_len) {
-      output_file[index] = 0;
-      output_file_len = index;
-    }
-  }
-}
+
+// void fs_reverse_output (uint32_t handle) {
+
+//   // Subtract handle from buffer
+//   uint32_t index = 0;
+//   uint32_t carry = 0;
+//   while (handle || carry) {
+//     int value = output_file[index] - (handle & 0xFF) - carry;
+//     output_file[index] = value < 0 ? 256 + value : value;
+//     carry = value < 0;
+//     handle >>= 8;
+//     if (++index > output_file_len) {
+//       output_file[index] = 0;
+//       output_file_len = index;
+//     }
+//   }
+
+//   // Divide buffer by alphabet length
+//   // This should be a clean division with no remainder
+//   index = output_file_len;
+//   carry = 0;
+//   while (index-- > 0) {
+//     uint32_t value = output_file[index] + carry * 256;
+//     output_file[index] = value / BABEL_ALPHABET_LENGTH;
+//     carry = value % BABEL_ALPHABET_LENGTH;
+//   }
+
+//   // Trim leading zero bytes
+//   while (output_file_len > 0 && output_file[output_file_len - 1] == 0) {
+//     output_file_len--;
+//   }
+
+// }
 
 static int32_t fs_get_object_handles(tud_mtp_cb_data_t* cb_data) {
   // `ls /<folder_in_question>`
@@ -748,12 +840,17 @@ static int32_t fs_get_object_handles(tud_mtp_cb_data_t* cb_data) {
 
   if (cb_data->phase == MTP_PHASE_COMMAND) {
 
-    // snprintf(babel_log + strlen(babel_log), sizeof(babel_log), "get_obj_handles %lu\n", parent_handle);
-
     if (parent_handle != 0xFFFFFFFF) {
-      fs_append_output(parent_handle - 1);
+      int parent_cycle = (parent_handle - 1) / handle_count;
+      if (parent_cycle == cycle) {
+        fs_append_output((parent_handle - 1) % handle_count + 1);
+        if (++cycle == 3) cycle = 0;
+      }
+      // snprintf(babel_log + strlen(babel_log), sizeof(babel_log), "get_obj_handles %lu\n", parent_handle);
     } else {
+      // snprintf(babel_log + strlen(babel_log), sizeof(babel_log), "get_obj_handles 0\n");
       output_file_len = 0;
+      cycle = 0;
     }
 
     // Payload space in the first packet (after the 12-byte container header)
@@ -767,7 +864,7 @@ static int32_t fs_get_object_handles(tud_mtp_cb_data_t* cb_data) {
     // Fill the remaining space in the first packet with as many handles as fit
     const uint32_t first_batch = tu_min32(handle_count, (first_payload_bytes - 4) / 4);
     for (uint32_t i = 0; i < first_batch; i++) {
-      *p++ = i + 1;
+      *p++ = i + 1 + cycle * handle_count;
     }
 
     // Declare length of full buffer to be streamed
@@ -782,7 +879,7 @@ static int32_t fs_get_object_handles(tud_mtp_cb_data_t* cb_data) {
 
     uint32_t* p = (uint32_t*) io_container->payload;
     for (uint32_t i = 0; i < handles_this_packet; i++) {
-      p[i] = handles_sent + i + 1;
+      p[i] = handles_sent + i + 1 + cycle * handle_count;
     }
 
     tud_mtp_data_send(io_container);
@@ -791,11 +888,14 @@ static int32_t fs_get_object_handles(tud_mtp_cb_data_t* cb_data) {
   return 0;
 }
 
+uint16_t babel_file_name[] = {'f','i','l','e',0};
+uint16_t babel_dir_name[BABEL_MAX_NAME_LENGTH + 1] = {0};
+
 static int32_t fs_get_object_info(tud_mtp_cb_data_t* cb_data) {
   // `ls -l /<file_in_question>`
   const mtp_container_command_t* command = cb_data->command_container;
   mtp_container_info_t* io_container = &cb_data->io_container;
-  const uint32_t obj_handle = command->params[0];
+  const uint32_t obj_handle = (command->params[0] - 1) % handle_count + 1;
   // struct stat stat_buf;
   // fs_handletable_entry_t *entry = NULL;
   // int retval = fs_stat_handle(&handle_table, obj_handle, &stat_buf, &entry);
@@ -804,37 +904,31 @@ static int32_t fs_get_object_info(tud_mtp_cb_data_t* cb_data) {
   //   return MTP_RESP_INVALID_OBJECT_HANDLE;
   // }
 
-  // if (obj_handle == 1) {
-    // snprintf(babel_log + strlen(babel_log), sizeof(babel_log), "get_obj_info %lu\n", obj_handle);
+  // if (obj_handle == handle_count) {
+    // snprintf(babel_log + strlen(babel_log), sizeof(babel_log), "get_obj_info\n");
   // }
 
-  char entry_name[BABEL_MAX_NAME_LENGTH + 1] = {0};
-  bool entry_is_dir = false;
-  fs_handle_t entry_parent = 0;
+  uint16_t *entry_name_ptr = babel_file_name;
+  bool entry_is_dir = obj_handle != handle_count;
 
-  char *entry_name_ptr = entry_name + sizeof(entry_name) - 1;
-  uint32_t index = obj_handle;
-  while (index > 0) {
-    index --;
-    entry_name_ptr --;
-    *entry_name_ptr = alphabet[index % BABEL_ALPHABET_LENGTH];
-    index /= BABEL_ALPHABET_LENGTH;
+  if (entry_is_dir) {
+    uint32_t index = obj_handle - 1;
+    for (int i = BABEL_MAX_NAME_LENGTH - 1; i >= 0; i --) {
+      babel_dir_name[i] = alphabet[index % BABEL_ALPHABET_LENGTH];
+      index /= BABEL_ALPHABET_LENGTH;
+    }
+    entry_name_ptr = babel_dir_name;
   }
 
-  if (entry_name_ptr == entry_name) {
-    entry_is_dir = true;
-  }
+  // uint16_t utf16_filename[MTP_FILENAME_LENGTH];
+  // size_t write_count = utf8_to_utf16((uint8_t *)entry_name_ptr, strlen(entry_name_ptr), utf16_filename, MTP_FILENAME_LENGTH);
+  // utf16_filename[TU_MIN(write_count, MTP_FILENAME_LENGTH)] = 0;
 
-  uint32_t file_size = output_file_len;
-
-  uint16_t utf16_filename[MTP_FILENAME_LENGTH];
-  size_t write_count = utf8_to_utf16((uint8_t *)entry_name_ptr, strlen(entry_name_ptr), utf16_filename, MTP_FILENAME_LENGTH);
-  utf16_filename[TU_MIN(write_count, MTP_FILENAME_LENGTH)] = 0;
   mtp_object_info_header_t obj_info_header = {
       .storage_id = SUPPORTED_STORAGE_ID,
       .object_format = entry_is_dir ? MTP_OBJ_FORMAT_ASSOCIATION : MTP_OBJ_FORMAT_TEXT,
       .protection_status = MTP_PROTECTION_STATUS_READ_ONLY,
-      .object_compressed_size = file_size,
+      .object_compressed_size = output_file_len,
       .thumb_format = MTP_OBJ_FORMAT_UNDEFINED,
       .thumb_compressed_size = 0,
       .thumb_pix_width = 0,
@@ -842,12 +936,12 @@ static int32_t fs_get_object_info(tud_mtp_cb_data_t* cb_data) {
       .image_pix_width = 0,
       .image_pix_height = 0,
       .image_bit_depth = 0,
-      .parent_object = entry_parent,
+      .parent_object = 0,
       .association_type = entry_is_dir ? MTP_ASSOCIATION_GENERIC_FOLDER : MTP_ASSOCIATION_UNDEFINED,
       .association_desc = 0,
       .sequence_number = 0};
   mtp_container_add_raw(io_container, &obj_info_header, sizeof(obj_info_header));
-  mtp_container_add_string(io_container, utf16_filename);
+  mtp_container_add_string(io_container, entry_name_ptr);
   mtp_container_add_cstring(io_container, FS_FIXED_DATETIME);
   mtp_container_add_cstring(io_container, FS_FIXED_DATETIME);
   mtp_container_add_cstring(io_container, ""); // keywords, not used
@@ -876,14 +970,14 @@ static int32_t fs_get_object(tud_mtp_cb_data_t* cb_data) {
     // something back, we need to send metadata back, so if we read a whole packet it's definitely
     // not gonna fit in the MTP packet's remaining space if our file is larger than the free space,
     // and when the file's smaller than that we're totally fine then.
-    fs_append_output(obj_handle - 1);
+    // fs_append_output(obj_handle - 1);
     size_t file_size = output_file_len;
     // Pass file_size (not first_chunk) so add_raw records the full transfer length in header->len,
     // even though it only copies min(file_size, remaining_buf) bytes into the packet buffer.
     uint32_t bytes_queued = mtp_container_add_raw(io_container, output_file, file_size);
-    if (bytes_queued >= output_file_len) {
-      fs_reverse_output(obj_handle - 1);
-    }
+    // if (bytes_queued >= output_file_len) {
+    //   fs_reverse_output(obj_handle - 1);
+    // }
     tud_mtp_data_send(io_container);
   } else if (cb_data->phase == MTP_PHASE_DATA) {
     // continue sending remaining data: file contents offset is xferred byte minus header size
@@ -892,9 +986,9 @@ static int32_t fs_get_object(tud_mtp_cb_data_t* cb_data) {
     uint8_t *write_ptr = io_container->payload;
     memcpy(write_ptr, output_file + offset, xact_len);
     tud_mtp_data_send(io_container);
-    if (offset + xact_len >= output_file_len) {
-      fs_reverse_output(obj_handle - 1);
-    }
+    // if (offset + xact_len >= output_file_len) {
+    //   fs_reverse_output(obj_handle - 1);
+    // }
   }
 
   return 0;
