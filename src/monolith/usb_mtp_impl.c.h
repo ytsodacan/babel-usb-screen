@@ -607,8 +607,7 @@ uint8_t output_file[4096] = {0};
 size_t output_file_len = 0;
 
 uint32_t handle_count = 0;
-
-int cycle = 0;
+int path_depth = 0;
 
 static int32_t fs_open_close_session(tud_mtp_cb_data_t* cb_data) {
   const mtp_container_command_t* command = cb_data->command_container;
@@ -847,17 +846,17 @@ static int32_t fs_get_object_handles(tud_mtp_cb_data_t* cb_data) {
   if (cb_data->phase == MTP_PHASE_COMMAND) {
 
     if (parent_handle != 0xFFFFFFFF) {
-      int parent_cycle = (parent_handle - 1) / handle_count;
-      if (parent_cycle == cycle) {
+      int prev_path_depth = (parent_handle - 1) / handle_count;
+      if (prev_path_depth == path_depth) {
         fs_append_output((parent_handle - 1) % handle_count + 1);
-        if (++cycle == 3) cycle = 0;
+        path_depth++;
       }
       // snprintf(babel_log + strlen(babel_log), sizeof(babel_log), "get_obj_handles %lu\n", parent_handle);
     } else {
       // snprintf(babel_log + strlen(babel_log), sizeof(babel_log), "get_obj_handles 0\n");
       output_file_len = 0;
       output_file[0] = 0;
-      cycle = 0;
+      path_depth = 0;
     }
 
     // Payload space in the first packet (after the 12-byte container header)
@@ -871,7 +870,7 @@ static int32_t fs_get_object_handles(tud_mtp_cb_data_t* cb_data) {
     // Fill the remaining space in the first packet with as many handles as fit
     const uint32_t first_batch = tu_min32(handle_count, (first_payload_bytes - 4) / 4);
     for (uint32_t i = 0; i < first_batch; i++) {
-      *p++ = i + 1 + cycle * handle_count;
+      *p++ = i + 1 + path_depth * handle_count;
     }
 
     // Declare length of full buffer to be streamed
@@ -886,7 +885,7 @@ static int32_t fs_get_object_handles(tud_mtp_cb_data_t* cb_data) {
 
     uint32_t* p = (uint32_t*) io_container->payload;
     for (uint32_t i = 0; i < handles_this_packet; i++) {
-      p[i] = handles_sent + i + 1 + cycle * handle_count;
+      p[i] = handles_sent + i + 1 + path_depth * handle_count;
     }
 
     tud_mtp_data_send(io_container);
