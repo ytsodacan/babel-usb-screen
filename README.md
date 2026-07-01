@@ -3,7 +3,7 @@
 This project turns an ESP32-S3 development board into an infinite filesystem inspired by the [digital Library of Babel](https://libraryofbabel.info/).
 
 
-This specific board incorporates the screen on the lilygo T-Dongle (https://lilygo.cc/products/t-dongle-s3?variant=42455191486645) to add more functionality.
+This specific fork incorporates the screen on the lilygo T-Dongle (https://lilygo.cc/products/t-dongle-s3?variant=42455191486645) to add more functionality.
 
 ## Usage
 
