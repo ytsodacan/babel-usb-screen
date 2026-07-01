@@ -98,6 +98,11 @@
 #define CFG_TUD_MTP_EP_BUFSIZE    4096
 #define CFG_TUD_MTP_EP_CONTROL_BUFSIZE  16 // should be enough to hold data in MTP control request
 
+//------------- Vendor (WebUSB config channel) -------------//
+#define CFG_TUD_VENDOR             1
+#define CFG_TUD_VENDOR_RX_BUFSIZE  256
+#define CFG_TUD_VENDOR_TX_BUFSIZE  256
+
 //------------- MTP device info -------------//
 #define CFG_TUD_MTP_DEVICEINFO_EXTENSIONS   "microsoft.com: 1.0; "
 #define CFG_TUD_MTP_DEVICEINFO_SUPPORTED_OPERATIONS \

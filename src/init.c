@@ -88,5 +88,14 @@ int init_tasks(void)
         &hTaskTinyusb);
     if (ret != pdPASS) return ESP_FAIL;
 
+    ret = xTaskCreate(
+        TaskDisplayDemo,
+        "display",
+        1024 * 4,
+        NULL,
+        4,
+        &hTaskDisplay);
+    if (ret != pdPASS) return ESP_FAIL;
+
     return ESP_OK;
 }

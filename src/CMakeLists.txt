@@ -14,5 +14,5 @@ set(utf_converter_inc
 idf_component_register(
     SRCS ${app_sources} ${utf_converter_src}
     INCLUDE_DIRS ${utf_converter_inc}
-    REQUIRES espressif-tinyusb-component
+    REQUIRES espressif-tinyusb-component driver
 )
