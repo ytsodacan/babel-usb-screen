@@ -2,6 +2,9 @@
 
 This project turns an ESP32-S3 development board into an infinite filesystem inspired by the [digital Library of Babel](https://libraryofbabel.info/).
 
+
+This specific board incorporates the screen on the lilygo T-Dongle (https://lilygo.cc/products/t-dongle-s3?variant=42455191486645) to add more functionality.
+
 ## Usage
 
 1. Buy an ESP32-S3 development board - ideally one shaped as a USB stick for maximum bewilderment. [This is the one I got](https://a.aliexpress.com/_EvdHrrY), though you don't necessarily need this exact variant. **That said, make sure you're getting an ESP32-S3.** That's the only one I've tested. Others may not have hardware USB support. S2 might work, but I make no promises.
